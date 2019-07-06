@@ -11,7 +11,7 @@ setuptools.setup(
     author_email="andrewminer@mac.com",
 
     packages=[
-        "pycurses",
+        "pycursesui",
     ],
     package_dir={"": "src"},
 

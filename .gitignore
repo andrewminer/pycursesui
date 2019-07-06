@@ -1,4 +1,5 @@
 *.egg-info/
+*.log
 *.swo
 *.swp
 .eggs/
