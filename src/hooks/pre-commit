@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+if git branch | grep -q '^\* master'; then
+    echo ""
+    echo "ERROR: Please don't commit directly to master. Instead, create a working branch"
+    echo "       and submit a pull request."
+    echo ""
+    exit 1
+fi
+
+MASTER_VERSION=$(git show master:setup.py | grep version= | sed 's/.*version="\(.*\)".*/\1/')
+CURRENT_VERSION=$(cat setup.py | grep version= | sed 's/.*version="\(.*\)".*/\1/')
+if [[ "$MASTER_VERSION" == "$CURRENT_VERSION" ]]; then
+    echo ""
+    echo "ERROR: It looks like you've forgotten to update the package version for your"
+    echo "       changes. Please update setup.py with a new version number."
+    echo ""
+    exit 1
+fi
+
+echo "Checking for stray fit/fdescription..."
+if egrep -rn 'with f(it|description)' src; then
+    echo ""
+    echo "ERROR: Please remove fit/fdescription from tests before committing."
+    echo ""
+    exit 1
+fi
+
+echo "Running linters..."
+./build.sh lint || exit 1
+
+echo "Running tests..."
+./build.sh test || exit 1
+
+echo "All pre-commit checks passed!"
+EXIT_CODE=0
+
+if git status | grep -q "not staged"; then
+    echo ""
+    echo "WARNING: It looks like you forgot to add some of your changes!  If this was"
+    echo "         unintentional, use 'git add -A' to add your missing changes. Otherwise,"
+    echo "         use 'git commit -n' to ignore this check."
+    echo ""
+    EXIT_CODE=1
+fi
+
+exit $EXIT_CODE

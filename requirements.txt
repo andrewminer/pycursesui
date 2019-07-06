@@ -1,0 +1,13 @@
+--index-url https://1hejIc-6NBRw68BmAkuppZVHsgbOfkQPs0@pypi.fury.io/boomtechnology/
+--extra-index-url https://pypi.org/simple
+
+Mako==1.0.7
+mamba==0.9.3
+pycodestyle==2.3.1
+pydocstyle==2.1.1
+pyflakes==1.6.0
+sure==1.4.7
+
+git+ssh://git@github.com/andrewminer/python-language-server#egg=python-language-server
+
+-e .
