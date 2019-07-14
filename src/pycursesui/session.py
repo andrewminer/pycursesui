@@ -2,7 +2,8 @@
 
 import curses
 
-from pycursesui import Logger
+from pycursesui import Logger, Window
+from typing import Callable, Tuple
 
 __all__ = ["Session"]
 
@@ -14,7 +15,7 @@ class Session(object):
 
     def __init__(self, logger=None):
         """Create a new Session."""
-        self._screen = None
+        self._window = None
         self.logger = logger
 
     # Properties ###################################################################################
@@ -22,7 +23,7 @@ class Session(object):
     @property
     def is_running(self) -> bool:
         """Get whether the session is currently active."""
-        return (self.screen is not None)
+        return (self.window is not None)
 
     @property
     def logger(self) -> Logger:
@@ -31,79 +32,91 @@ class Session(object):
 
     @logger.setter
     def logger(self, value: Logger):
-        if value is None:
-            value = Logger()
+        value = value if value is not None else Logger()
         self._logger = value
 
     @property
-    def screen(self):
-        """Get the screen associated with this session (if any)."""
-        return self._screen
+    def window(self) -> Window:
+        """Get the window associated with this session (if any)."""
+        return self._window
 
-    # Magic Methods ################################################################################
+    # Public Methods ###############################################################################
 
-    def __enter__(self):
-        """Enter a session."""
+    def start(self) -> "Session":
+        """
+        Start a new session.
+
+        This will take over the current TTY and begin a curses session. The main window will be available from this
+        object's `window` property. The `stop` method *must* be called to restore the TTY back to its original
+        condition.
+        """
         self.logger.info("Starting curses session")
-        try:
-            self._screen = curses.initscr()
-        except Exception as e:
-            self.logger.error("Could not initialize a curses screen", e)
-            curses.endwin()
-            raise e
 
-        try:
-            curses.noecho()
-        except Exception as e:
-            self.logger.error("Could not set up no ech mode", e)
-            curses.echo()
-            curses.endwin()
-            raise e
+        raw_window, error = self._attempt(lambda: curses.initscr())
+        if raw_window:
+            self._window = Window(raw_window)
+        if error:
+            self.logger.error("could not initialize a curses window", error)
+            self._attempt(lambda: curses.endwin())
+            return None
 
-        try:
-            curses.cbreak()
-        except Exception as e:
-            self.logger.error("Could not set up character break mode", e)
-            curses.nocbreak()
-            curses.echo()
-            curses.endwin()
-            raise e
+        _, error = self._attempt(lambda: curses.start_color())
+        if error:
+            self.logger.error("could not start color session", error)
+            self._attempt(lambda: curses.endwin())
 
-        try:
-            self.screen.keypad(True)
-        except Exception as e:
-            self.logger.error("Could not set up keypad", e)
-            self.screen.keypad(False)
-            curses.nocbreak()
-            curses.echo()
-            curses.endwin()
-            raise e
+        _, error = self._attempt(lambda: curses.noecho())
+        if error:
+            self.logger.error("Could not set up no echo mode", error)
+            self._attempt(lambda: curses.echo())
+            self._attempt(lambda: curses.endwin())
+
+        _, error = self._attempt(lambda: curses.cbreak())
+        if error:
+            self.logger.error("Could not set up chracter break mode", error)
+            self._attempt(lambda: curses.cnobreak())
+            self._attempt(lambda: curses.echo())
+            self._attempt(lambda: curses.endwin())
+
+        _, error = self._attempt(lambda: raw_window.keypad(True))
+        if error:
+            self.logger.error("Could not set up keypad", error)
+            self._attempt(lambda: raw_window.keypad(False))
+            self._attempt(lambda: curses.cnobreak())
+            self._attempt(lambda: curses.echo())
+            self._attempt(lambda: curses.endwin())
 
         return self
 
+    def stop(self) -> "Session":
+        """Stop the current session."""
+        self.logger.info("Shutting down curses session")
+        self._attempt(lambda: self.window.raw.keypad(False))
+        self._attempt(lambda: curses.nocbreak())
+        self._attempt(lambda: curses.echo())
+        self._attempt(lambda: curses.endwin())
+
+        self._window = None
+        return self
+
+    # Magic Methods ################################################################################
+
+    def __enter__(self) -> "Session":
+        """Enter a session."""
+        return self.start()
+
     def __exit__(self, type, value, traceback):
         """Exit a session."""
-        self.logger.info("Shutting down curses session")
-        try:
-            self.screen.keypad(False)
-        except Exception as e:
-            self.logger.error("Could not reset keypad", e)
-
-        try:
-            curses.nocbreak()
-        except Exception as e:
-            self.logger.error("Could not reset character break mode", e)
-
-        try:
-            curses.echo()
-        except Exception as e:
-            self.logger.error("Could not reset echo mode", e)
-
-        try:
-            curses.endwin()
-        except Exception as e:
-            self.logger.error("Could not shut down curses session", e)
-
-        self._screen = None
-
+        self.stop()
         return False
+
+    # Private Methods ##############################################################################
+
+    def _attempt(self, task: Callable) -> Tuple[object, Exception]:
+        result, error = None, None
+        try:
+            result = task()
+        except Exception as e:
+            error = e
+
+        return result, error
